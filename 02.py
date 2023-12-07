@@ -23,14 +23,28 @@ class Draw:
         return self <= other and self != other
 
 
-def check_games(max_draw: Draw, games_list: str):
+def parse_games(games_list: str):
     for line in games_list.splitlines():
         if not line:
             continue
         game, _, draws = line.partition(":")
-        if all(Draw.from_str(draw) < max_draw for draw in draws.split(";")):
-            _, _, game_num = game.partition(" ")
-            yield int(game_num)
+        _, _, game_num = game.partition(" ")
+        yield int(game_num), (Draw.from_str(draw) for draw in draws.split(";"))
+
+
+def check_games(max_draw: Draw, games_list: str):
+    for game_num, draws in parse_games(games_list):
+        if all(draw < max_draw for draw in draws):
+            yield game_num
+
+
+def min_draw_power(games_list: str):
+    for _, draws in parse_games(games_list):
+        draws = tuple(draws)  # cache for reuse
+        red = max(draw.red for draw in draws)
+        green = max(draw.green for draw in draws)
+        blue = max(draw.blue for draw in draws)
+        yield red * green * blue
 
 
 MAX_DRAW = Draw(red=12, green=13, blue=14)
@@ -56,3 +70,12 @@ def test_check_game():
 def test_02a():
     with open("02_input.txt", encoding="utf-8") as f:
         assert sum(check_games(MAX_DRAW, f.read())) == 2512
+
+
+def test_min_draw_power():
+    assert list(min_draw_power(TEST_INPUT)) == [48, 12, 1560, 630, 36]
+
+
+def test_02b():
+    with open("02_input.txt", encoding="utf-8") as f:
+        assert sum(min_draw_power(f.read())) == 67335
