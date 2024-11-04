@@ -87,17 +87,23 @@ class Almanac:
         _, _, seeds = elem[0].partition("seeds: ")
         self.seeds = [int(x) for x in seeds.split()]
 
+        seed_ranges = zip(self.seeds[::2], self.seeds[1::2])
+        self.seed_ranges = [range(a, a + b) for (a, b) in seed_ranges]
+
         maps = (Map.from_str(x) for x in elem[1:])
         self.maps = {m.source_name: m for m in maps}
 
-    def find(self, source_type, source, param):
-        if source_type == param:
-            return source
+    def find_location(self, value, source_type="seed"):
+        if source_type == "location":
+            return value
         mmap = self.maps[source_type]
-        return self.find(mmap.dest_name, mmap.transform(source), param)
-    
-    def min_location(self):
-        return min(self.find("seed", x, "location") for x in self.seeds)
+        return self.find_location(mmap.transform(value), mmap.dest_name)
+
+    def min_location_per_seed(self):
+        return min(self.find_location(x) for x in self.seeds)
+
+    def min_location_by_range(self):
+        return min(self.find_location(x) for sr in self.seed_ranges for x in sr)
 
 
 @pytest.mark.parametrize(
@@ -131,13 +137,26 @@ seed-to-soil map:
 )
 def test_seed_to_location(seed, location):
     almanac = Almanac(TEST_ALMANAC)
-    assert almanac.find("seed", seed, "location") == location
+    assert almanac.find_location(seed) == location
+
 
 def test_almanac_min_location():
     almanac = Almanac(TEST_ALMANAC)
-    assert almanac.min_location() == 35
+    assert almanac.min_location_per_seed() == 35
+
 
 def test_05a():
     with open("05_input.txt", encoding="utf-8") as f:
         almanac = Almanac(f.read())
-        assert almanac.min_location() == 662197086 
+        assert almanac.min_location_per_seed() == 662197086
+
+
+def test_almanac_min_location_in_seed_ranges():
+    almanac = Almanac(TEST_ALMANAC)
+    assert almanac.min_location_by_range() == 46
+
+@pytest.mark.skip(reason="Naive search runs too slow")
+def test_05b():
+    with open("05_input.txt", encoding="utf-8") as f:
+        almanac = Almanac(f.read())
+        assert almanac.min_location_by_range() == 0
