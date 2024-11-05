@@ -53,11 +53,14 @@ class Map:
             dest, source, length = elem.split()
             return cls(int(source), int(dest), int(length))
 
-        def transform(self, x):
-            x -= self.source_start
+        def transform(self, x, backwards):
+            source, dest = self.source_start, self.dest_start
+            if backwards:
+                source, dest = dest, source
+            x -= source
             if x in range(self.length):
-                return self.dest_start + x
-            return 0
+                return dest + x
+            return None
 
     source_name: str
     dest_name: str
@@ -72,10 +75,10 @@ class Map:
         elements = [cls.Elem.from_str(x) for x in lines[1:]]
         return cls(x, y, elements)
 
-    def transform(self, x):
+    def transform(self, x, backwards=False):
         for elem in self.elements:
-            result = elem.transform(x)
-            if result:
+            result = elem.transform(x, backwards)
+            if result is not None:
                 return result
         return x
 
@@ -84,26 +87,49 @@ class Almanac:
     def __init__(self, almanac: str) -> None:
         elem = almanac.split("\n\n")
 
+        print("parsing seeds...")
         _, _, seeds = elem[0].partition("seeds: ")
         self.seeds = [int(x) for x in seeds.split()]
 
+        print("parsing seed ranges...")
         seed_ranges = zip(self.seeds[::2], self.seeds[1::2])
         self.seed_ranges = [range(a, a + b) for (a, b) in seed_ranges]
 
-        maps = (Map.from_str(x) for x in elem[1:])
-        self.maps = {m.source_name: m for m in maps}
+        print("generating maps...")
+        maps = [Map.from_str(x) for x in elem[1:]]
+        print("map fwd...")
+        self.maps_fwd = {m.source_name: m for m in maps.copy()}
+        print("map rev...")
+        self.maps_rev = {m.dest_name: m for m in maps}
 
-    def find_location(self, value, source_type="seed"):
-        if source_type == "location":
+    def find(self, value_type, value, target, backwards=False):
+        if value_type == target:
             return value
-        mmap = self.maps[source_type]
-        return self.find_location(mmap.transform(value), mmap.dest_name)
+        if backwards:
+            mmap = self.maps_rev[value_type]
+            return self.find(mmap.source_name, mmap.transform(value, backwards), target, backwards)
+        else:
+            mmap = self.maps_fwd[value_type]
+            return self.find(mmap.dest_name, mmap.transform(value), target)
 
     def min_location_per_seed(self):
-        return min(self.find_location(x) for x in self.seeds)
+        return min(self.find("seed", x, "location") for x in self.seeds)
 
     def min_location_by_range(self):
-        return min(self.find_location(x) for sr in self.seed_ranges for x in sr)
+        locations = self.maps_rev["location"]
+        locations = range(1, max(x.dest_start + x.length for x in locations.elements))
+        print(f"{locations = }")
+        def in_range(seed):
+            for seed_range in self.seed_ranges:
+                if seed in seed_range:
+                    return True
+            return False
+
+        return min(
+            location
+            for location in locations
+            if in_range(self.find("location", location, "seed", backwards=True))
+        )
 
 
 @pytest.mark.parametrize(
@@ -137,7 +163,7 @@ seed-to-soil map:
 )
 def test_seed_to_location(seed, location):
     almanac = Almanac(TEST_ALMANAC)
-    assert almanac.find_location(seed) == location
+    assert almanac.find("seed", seed, "location") == location
 
 
 def test_almanac_min_location():
@@ -155,8 +181,10 @@ def test_almanac_min_location_in_seed_ranges():
     almanac = Almanac(TEST_ALMANAC)
     assert almanac.min_location_by_range() == 46
 
-@pytest.mark.skip(reason="Naive search runs too slow")
+
 def test_05b():
     with open("05_input.txt", encoding="utf-8") as f:
+        print("opening almanac")
         almanac = Almanac(f.read())
+        print("starting parse")
         assert almanac.min_location_by_range() == 0
