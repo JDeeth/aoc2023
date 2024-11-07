@@ -23,13 +23,25 @@ class Hand:
 
     htype: Type
     cards: str
+    joker_wildcard: bool = False
 
     @classmethod
-    def from_str(cls, cards):
-        pattern = Counter(cards).values()
-        pattern = tuple(sorted(pattern, reverse=True))
-        htype = next(t for t in cls.Type if t.pattern == pattern)
-        return cls(cards=cards, htype=htype)
+    def from_str(cls, cards, joker_wildcard=False):
+        if len(cards) != 5:
+            raise ValueError("Requires five cards")
+        non_wildcards = cards
+        if joker_wildcard:
+            non_wildcards = non_wildcards.replace("J", "")
+        if non_wildcards:
+            pattern = Counter(non_wildcards).values()
+            pattern = sorted(pattern, reverse=True)
+            jokers = 5 - len(non_wildcards)
+            pattern[0] += jokers
+        else:
+            pattern = [5]
+        htype = next(t for t in cls.Type if t.pattern == tuple(pattern))
+
+        return cls(cards=cards, htype=htype, joker_wildcard=joker_wildcard)
 
     def __lt__(self, other):
         if self.htype.rank != other.htype.rank:
@@ -41,11 +53,10 @@ class Hand:
                 continue
             return a < b
 
-    @staticmethod
-    def score_card(text):
+    def score_card(self, text):
         scores = {
             "T": 10,
-            "J": 11,
+            "J": 1 if self.joker_wildcard else 11,
             "Q": 12,
             "K": 13,
             "A": 14,
@@ -53,12 +64,12 @@ class Hand:
         return scores.get(text) or int(text)
 
 
-def play(text):
+def play(text, joker_wildcard=False):
     lines = text.strip().splitlines()
     hand_bid = {}
     for line in lines:
         hand, bid = line.split()
-        hand = Hand.from_str(hand)
+        hand = Hand.from_str(hand, joker_wildcard)
         hand_bid[hand] = int(bid)
     ranked_bids = (bid for _hand, bid in sorted(hand_bid.items()))
     return sum(rank * bid for (rank, bid) in enumerate(ranked_bids, start=1))
@@ -74,10 +85,17 @@ def play(text):
         ("23432", Hand.Type.TWO_PAIR),
         ("A23A4", Hand.Type.ONE_PAIR),
         ("23456", Hand.Type.HIGH_CARD),
+        ("AJAAA", Hand.Type.FIVE_OF_A_KIND),
+        ("AJJJA", Hand.Type.FIVE_OF_A_KIND),
+        ("JJJJJ", Hand.Type.FIVE_OF_A_KIND),
+        ("AA8JA", Hand.Type.FOUR_OF_A_KIND),
+        ("233J2", Hand.Type.FULL_HOUSE),
+        ("TJJ98", Hand.Type.THREE_OF_A_KIND),
+        ("A23J4", Hand.Type.ONE_PAIR),
     ],
 )
 def test_categorise_hand(text, htype):
-    assert Hand.from_str(text).htype == htype
+    assert Hand.from_str(text, joker_wildcard=True).htype == htype
 
 
 @pytest.mark.parametrize(
@@ -85,7 +103,8 @@ def test_categorise_hand(text, htype):
     [
         "AAAAA AA8AA 23332 TTT98 23432 A23A4 23456",
         "33332 2AAAA",
-        "77888 77888",
+        "77888 77788",
+        "QQQQ2 JKKK2",
     ],
 )
 def test_rank_hand(text):
@@ -95,22 +114,42 @@ def test_rank_hand(text):
     assert " ".join(h.cards for h in hands) == text
 
 
-@pytest.mark.parametrize("text,value", [("T", 10), ("9", 9)])
-def test_card_value(text, value):
-    assert Hand.score_card(text) == value
+@pytest.mark.parametrize(
+    "text,value, joker_wildcard",
+    [
+        ("T", 10, False),
+        ("9", 9, False),
+        ("J", 11, False),
+        ("J", 1, True),
+    ],
+)
+def test_card_value(text, value, joker_wildcard):
+    h = Hand.from_str("AAAAA", joker_wildcard)
+    assert h.score_card(text) == value
 
 
-def test_winnings():
-    text = """
+SAMPLE_HANDS_BIDS = """
 32T3K 765
 T55J5 684
 KK677 28
 KTJJT 220
 QQQJA 483
 """
-    assert play(text) == 6440
+
+
+def test_winnings():
+    assert play(SAMPLE_HANDS_BIDS) == 6440
 
 
 def test_07a():
     with open("07_input.txt", encoding="utf-8") as f:
         assert play(f.read()) == 251029473
+
+
+def test_winnings_with_joker_wildcard():
+    assert play(SAMPLE_HANDS_BIDS, joker_wildcard=True) == 5905
+
+
+def test_07b():
+    with open("07_input.txt", encoding="utf-8") as f:
+        assert play(f.read(), joker_wildcard=True) == 251003917
